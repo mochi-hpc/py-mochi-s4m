@@ -19,7 +19,7 @@ using namespace std::string_literals;
     }                                                        \
 } while(0)
 
-class S4MCommunicator {
+class S4MService {
 
     struct Data {
 
@@ -48,11 +48,11 @@ class S4MCommunicator {
     std::unique_ptr<tl::engine> m_engine;
     std::vector<tl::endpoint>   m_peers;
     std::unique_ptr<MailBox>    m_mailbox;
-    tl::remote_procedure        m_post_rpc;
+    tl::remote_procedure        m_broadcast_rpc;
 
     public:
 
-    S4MCommunicator(py::handle mpi_comm,
+    S4MService(py::handle mpi_comm,
                     const std::string& protocol,
                     int num_rpc_threads) {
         MPI_Comm comm         = MPI_COMM_NULL;
@@ -61,7 +61,7 @@ class S4MCommunicator {
             comm = *PyMPIComm_Get(py_mpi_comm);
         } else {
             throw std::runtime_error(
-                "S4MCommunicator should be initialized with an mpi4py communicator");
+                "S4MService should be initialized with an mpi4py communicator");
         }
 
         if(num_rpc_threads == 0) num_rpc_threads = -1;
@@ -87,7 +87,7 @@ class S4MCommunicator {
             m_peers.push_back(m_engine->lookup(addr));
         }
 
-        m_post_rpc = m_engine->define("s4m_post",
+        m_broadcast_rpc = m_engine->define("s4m_broadcast",
             [this](const tl::request& req, int source, int size, const tl::bulk& remote_bulk) {
                 std::vector<char> buffer(size);
                 auto local_bulk = m_engine->expose({{(void*)buffer.data(), (size_t)buffer.size()}},
@@ -103,7 +103,7 @@ class S4MCommunicator {
         MPI_Barrier(comm);
     }
 
-    void post(const py::buffer& data) const {
+    void broadcast(const py::buffer& data) const {
         std::vector<tl::async_response> responses;
         responses.reserve(m_size-1);
         py::buffer_info buf_info = data.request();
@@ -112,14 +112,14 @@ class S4MCommunicator {
         void* buffer = const_cast<void*>(buf_info.ptr);
         auto bulk = m_engine->expose({{buffer, size}}, tl::bulk_mode::read_only);
         for(const auto& peer : m_peers) {
-            responses.push_back(m_post_rpc.on(peer).async(m_rank, (int)size, bulk));
+            responses.push_back(m_broadcast_rpc.on(peer).async(m_rank, (int)size, bulk));
         }
         for(auto& response : responses) {
             response.wait();
         }
     }
 
-    py::object get(bool blocking) {
+    py::object receive(bool blocking) {
         std::unique_lock<tl::mutex> g(m_mailbox->m_mutex);
         if(m_mailbox->m_content.empty() && !blocking)
             return py::none();
@@ -132,10 +132,10 @@ class S4MCommunicator {
         return result;
     }
 
-    ~S4MCommunicator() {
+    ~S4MService() {
         m_mailbox.reset();
         m_peers.clear();
-        m_post_rpc.deregister();
+        m_broadcast_rpc.deregister();
         if(m_engine)
             m_engine->finalize();
     }
@@ -146,13 +146,13 @@ PYBIND11_MODULE(_s4m, s4m) {
     import_mpi4py();
 
     s4m.doc() = "S4M C++ extension";
-    py::class_<S4MCommunicator>(s4m, "S4MCommunicator")
+    py::class_<S4MService>(s4m, "S4MService")
         .def(py::init<py::handle,const std::string&,int>(),
              "comm"_a, "protocol"_a, "num_rpc_threads"_a=0)
-        .def("post", &S4MCommunicator::post,
+        .def("broadcast", &S4MService::broadcast,
              "Post data to all the other processes",
              "data"_a)
-        .def("get", &S4MCommunicator::get,
-             "Get data sent by any other process",
+        .def("receive", &S4MService::receive,
+             "Try receiving data sent by any other process",
              "blocking"_a=false);
 }
