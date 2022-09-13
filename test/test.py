@@ -35,6 +35,7 @@ def test(s4m_comm, mpi_comm, data_size):
         t2 = time.time()
         print(f'[{my_rank}] get(blocking) took {(t2-t1):.4f}')
         sys.stdout.flush()
+    mpi_comm.Barrier()
 
 
 if __name__ == '__main__':
