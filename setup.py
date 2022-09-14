@@ -8,6 +8,7 @@ import os.path
 import sys
 
 thallium = pkgconfig.parse('thallium')
+spdlog = pkgconfig.parse('spdlog')
 
 extra_compile_args=['-std=c++14']
 if sys.platform == 'darwin':
@@ -15,9 +16,9 @@ if sys.platform == 'darwin':
 
 s4m_ext = Extension('_s4m',
         ['s4m/src/s4m.cpp'],
-        libraries=thallium['libraries'] + ['stdc++', 'mpi'],
-        library_dirs=thallium['library_dirs'],
-        include_dirs=thallium['include_dirs'] + [pybind11.get_include(), mpi4py_get_include()],
+        libraries=thallium['libraries'] + spdlog['libraries'] + ['stdc++', 'mpi'],
+        library_dirs=thallium['library_dirs'] + spdlog['library_dirs'],
+        include_dirs=thallium['include_dirs'] + spdlog['include_dirs'] + [pybind11.get_include(), mpi4py_get_include()],
         language='c++14',
         extra_compile_args=extra_compile_args,
         depends=[])
